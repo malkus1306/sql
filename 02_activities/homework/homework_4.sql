@@ -16,7 +16,11 @@ HINT: keep the syntax the same, but edited the correct components with the strin
 The `||` values concatenate the columns into strings. 
 Edit the appropriate columns -- you're making two edits -- and the NULL rows will be fixed. 
 All the other rows will remain the same.) */
-
+SELECT 
+product_name || ', ' || 
+COALESCE(product_size,'') || ' (' || 
+COALESCE(product_qty_type,'unit') || ')' AS product_details
+FROM product
 
 
 
@@ -29,16 +33,27 @@ You can either display all rows in the customer_purchases table, with the counte
 each new market date for each customer, or select only the unique market dates per customer 
 (without purchase details) and number those visits. 
 HINT: One of these approaches uses ROW_NUMBER() and one uses DENSE_RANK(). */
-
+SELECT customer_id, product_id, vendor_id, market_date, quantity, cost_to_customer_per_qty, transaction_time
+,DENSE_RANK() OVER(PARTITION BY customer_id ORDER BY market_date ASC) AS unique_date
+FROM customer_purchases
 
 /* 2. Reverse the numbering of the query from a part so each customer’s most recent visit is labeled 1, 
 then write another query that uses this one as a subquery (or temp table) and filters the results to 
 only the customer’s most recent visit. */
-
+SELECT *
+FROM
+(
+	SELECT customer_id, product_id, vendor_id, market_date, quantity, cost_to_customer_per_qty, transaction_time
+	,DENSE_RANK() OVER(PARTITION BY customer_id ORDER BY market_date DESC, transaction_time DESC) AS unique_date
+	FROM customer_purchases
+) x
+WHERE x.unique_date = 1
 
 /* 3. Using a COUNT() window function, include a value along with each row of the 
 customer_purchases table that indicates how many different times that customer has purchased that product_id. */
-
+SELECT *
+,COUNT() OVER(PARTITION BY customer_id, product_id ORDER BY product_id) AS product_transactions_by_customer
+FROM customer_purchases
 
 
 
@@ -53,11 +68,20 @@ Remove any trailing or leading whitespaces. Don't just use a case statement for 
 | Habanero Peppers - Organic | Organic     |
 
 Hint: you might need to use INSTR(product_name,'-') to find the hyphens. INSTR will help split the column. */
-
+SELECT *
+,RTRIM(LTRIM(
+	NULLIF(LTRIM(SUBSTR(product_name,INSTR(product_name,'-')),'-'),product_name)
+)) AS product_details
+FROM product
 
 
 /* 2. Filter the query to show any product_size value that contain a number with REGEXP. */
-
+SELECT *
+,RTRIM(LTRIM(
+	NULLIF(LTRIM(SUBSTR(product_name,INSTR(product_name,'-')),'-'),product_name)
+)) AS product_details
+FROM product
+WHERE product_size REGEXP '[0-9]'
 
 
 -- UNION
@@ -69,7 +93,22 @@ HINT: There are a possibly a few ways to do this query, but if you're struggling
 "best day" and "worst day"; 
 3) Query the second temp table twice, once for the best day, once for the worst day, 
 with a UNION binding them. */
+WITH total_sales_by_date AS(
+	SELECT market_date
+	,sum(quantity*cost_to_customer_per_qty) as sales
+	FROM customer_purchases
+	GROUP BY market_date
+),
+ranked_sales AS(
+	SELECT *
+	,ROW_NUMBER() OVER(ORDER BY sales DESC) as rank_desc
+	,ROW_NUMBER() OVER(ORDER BY sales ASC) as rank_asc
+	FROM total_sales_by_date
+)
 
+SELECT market_date, sales, 'best_day' as day_description FROM ranked_sales WHERE rank_desc = 1
+UNION ALL
+SELECT market_date, sales, 'worst_day' FROM ranked_sales WHERE rank_asc = 1
 
 
 
